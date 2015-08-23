@@ -1,0 +1,107 @@
+---
+title: "Machine Learning Assignment 1"
+---
+
+## Introduction 
+
+This report examines the <em>Weight Lifting Exercises Dataset</em> to predict the manner in which the subjects did the excercise. 
+
+See website <http://groupware.les.inf.puc-rio.br/har> for more details about this dataset. 
+
+## Getting Data 
+
+The training and testing datasets were sourced from <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv> and <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv> respectively. 
+
+```{r,echo=TRUE}
+setwd("/Users/mengsam/Documents/R/Data Scientist/Machine Learning/Assignment/")
+
+training <- read.csv("pml-training.csv",header=TRUE,na.strings=c("","NA","NULL"))
+
+testing <- read.csv("pml-testing.csv",header=TRUE,na.strings=c("","NA","NULL"))
+```
+
+```{r,echo=TRUE}
+dim(training)
+```
+
+## Data Cleansing
+Two approaches were adapted to reduce the amount of predictors. 
+
+Firstly, NAs are observed in many columns of the training and testing datasets. These columns will be removed as they do not help in explaining the outcome. Similarly, metadata about the participants will also be removed.   
+
+```{r}
+# removes columns with NAs 
+NonNA_Columns <- colnames(training[colSums(is.na(training)) == 0])
+NonNA_NonMetadata <- NonNA_Columns[(8:60)]
+
+# Revised training and testing dataset 
+training_v1 <- training[NonNA_NonMetadata]
+
+dim(training_v1)
+```
+Secondly, highly correlated variables will be removed to avoid multicollinearity. 
+
+```{r,warning=FALSE}
+# load required packages
+library(caret)
+library(rattle)
+```
+
+```{r}
+# computes correlation
+Matrix_Correl <- cor(na.omit(training_v1[sapply(training_v1, is.numeric)]))
+
+# Find highly correlated variables 
+High_Corr_Matrix <- findCorrelation(Matrix_Correl, cutoff = .90, verbose = FALSE)
+
+# Revised training and testing dataset 
+training_v2 <- training_v1[,-High_Corr_Matrix]
+
+dim(training_v2)
+```
+The revised dataset will now be used in the modelling. 
+
+## Data Analysis 
+```{r}
+# Create training and test datasets. This data slicing will allow us to perform cross validation when developing and testing the performance of the models. 
+inTrain <- createDataPartition(training_v2$classe,p=0.7,list=FALSE)
+training_data <- training_v2[inTrain,] 
+testing_data <- training_v2[-inTrain,]
+```
+
+Predictive Tree Models taught in class will be used to classify variables into groups. 
+
+```{r}
+# rpart constructs trees based on the outcome and predictors
+set.seed(11111)
+modFit_rpart <- train(classe~.,data=training_data,method="rpart")
+modFit_rpart$finalModel
+fancyRpartPlot(modFit_rpart$finalModel)
+
+# Cross validation  
+predictions <- predict(modFit_rpart,testing_data) 
+predictions_matrix = with(testing_data,table(predictions,classe))
+1 - sum(diag(predictions_matrix))/sum(as.vector(predictions_matrix))
+```
+The high error rate shows the poor modelling performance.
+
+```{r}
+# rf is an extension of bagging on classification/regression trees and will be used to see whether a lower out of sample error can be achieved. 
+set.seed(11111)
+modFit_rf <- train(classe~.,data=training_data,method="rf")
+modFit_rf 
+
+# Cross validation  
+predictions <- predict(modFit_rf,testing_data) 
+predictions_matrix_rf = with(testing_data,table(predictions,classe))  
+1 - sum(diag(predictions_matrix_rf))/sum(as.vector(predictions_matrix_rf))
+```
+The low error rate shows the model high predictive capability.
+
+## Predictions 
+We will now use the derived random forest model to predict the outcome using the data from the test set. 
+
+```{r}
+answer <- predict(modFit_rf,testing) 
+answer
+```
